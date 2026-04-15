@@ -178,8 +178,8 @@ function PersonModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-3 md:flex md:items-center md:justify-center md:p-4">
+      <div className="mx-auto w-full max-w-2xl rounded-3xl bg-white p-4 shadow-2xl md:p-6 max-h-[92vh] overflow-y-auto">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-slate-900">
@@ -317,7 +317,7 @@ function PersonModal({
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-3">
+        <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-4 md:flex-row md:justify-end">
           <button
             onClick={onClose}
             className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600"
