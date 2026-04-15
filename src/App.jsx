@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const STORAGE_KEY = "calendario-personal-v3";
+const STORAGE_KEY = "calendario-personal-v4";
 
 const REGIMEN_OPTIONS = [
   { label: "14x7", work: 14, rest: 7 },
@@ -35,6 +35,7 @@ const defaultData = {
       restDays: 7,
       startDate: "2026-04-01",
       notes: "Supervisor de campo.",
+      hidden: false,
     },
     {
       id: crypto.randomUUID(),
@@ -45,6 +46,7 @@ const defaultData = {
       restDays: 7,
       startDate: "2026-04-04",
       notes: "Frente norte.",
+      hidden: false,
     },
     {
       id: crypto.randomUUID(),
@@ -55,6 +57,7 @@ const defaultData = {
       restDays: 2,
       startDate: "2026-04-07",
       notes: "Apoyo documental.",
+      hidden: false,
     },
   ],
   holidays: ["2026-04-23", "2026-04-30"],
@@ -71,6 +74,7 @@ function getDefaultForm() {
     restDays: 7,
     startDate: new Date().toISOString().slice(0, 10),
     notes: "",
+    hidden: false,
   };
 }
 
@@ -179,7 +183,7 @@ function PersonModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-3 md:flex md:items-center md:justify-center md:p-4">
-      <div className="mx-auto w-full max-w-2xl rounded-3xl bg-white p-4 shadow-2xl md:p-6 max-h-[92vh] overflow-y-auto">
+      <div className="mx-auto max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl md:p-6">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-slate-900">
@@ -336,11 +340,112 @@ function PersonModal({
   );
 }
 
+function ScheduleGrid({ days, people, holidaySet, blockedSet }) {
+  return (
+    <div className="overflow-x-auto">
+      <div
+        className="grid min-w-[1100px]"
+        style={{ gridTemplateColumns: `240px repeat(${days.length}, minmax(70px, 1fr))` }}
+      >
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Personal
+        </div>
+
+        {days.map((day) => {
+          const iso = toISO(day);
+          return (
+            <div
+              key={iso}
+              className="border-b border-l border-slate-100 bg-slate-50 px-2 py-3 text-center text-xs font-semibold text-slate-500"
+            >
+              <div>{formatDateLabel(day)}</div>
+              <div className="mt-1 flex items-center justify-center gap-1">
+                {holidaySet.has(iso) && (
+                  <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">
+                    F
+                  </span>
+                )}
+                {blockedSet.has(iso) && (
+                  <span className="rounded bg-rose-100 px-1 text-[10px] text-rose-700">
+                    B
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {people.map((person) => (
+          <React.Fragment key={person.id}>
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
+              <div
+                className="h-4 w-4 rounded-full"
+                style={{ backgroundColor: person.color }}
+              />
+              <div>
+                <p className="text-sm font-medium text-slate-800">{person.name}</p>
+                <p className="text-xs text-slate-500">{person.regimenType}</p>
+              </div>
+            </div>
+
+            {days.map((day) => {
+              const iso = toISO(day);
+              const status = getDayStatus(person, day);
+
+              return (
+                <div
+                  key={`${person.id}-${iso}`}
+                  className="border-b border-l border-slate-100 p-2"
+                >
+                  <div
+                    className={`relative h-11 rounded-xl ${
+                      status === "rest"
+                        ? "border border-dashed border-slate-300 bg-slate-100"
+                        : ""
+                    }`}
+                    style={{
+                      backgroundColor:
+                        status === "work"
+                          ? person.color
+                          : status === "none"
+                          ? "#f8fafc"
+                          : undefined,
+                      opacity: status === "work" ? 0.9 : 1,
+                    }}
+                    title={
+                      status === "work"
+                        ? `${person.name} trabaja`
+                        : status === "rest"
+                        ? `${person.name} descansa`
+                        : "Sin programación"
+                    }
+                  >
+                    {holidaySet.has(iso) && (
+                      <div className="absolute left-1 top-1 rounded bg-amber-100 px-1 text-[10px] text-amber-700">
+                        F
+                      </div>
+                    )}
+                    {blockedSet.has(iso) && (
+                      <div className="absolute right-1 top-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700">
+                        B
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const initialData = useMemo(() => loadData(), []);
   const [people, setPeople] = useState(initialData.people);
-  const [holidays] = useState(initialData.holidays);
-  const [blockedDays] = useState(initialData.blockedDays);
+  const [holidays, setHolidays] = useState(initialData.holidays);
+  const [blockedDays, setBlockedDays] = useState(initialData.blockedDays);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("week");
@@ -349,6 +454,8 @@ export default function App() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(getDefaultForm());
+
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem(
@@ -363,9 +470,14 @@ export default function App() {
     return people.filter((person) => {
       const matchName = person.name.toLowerCase().includes(searchText.toLowerCase());
       const matchPerson = selectedPerson === "all" || person.id === selectedPerson;
-      return matchName && matchPerson;
+      const visible = !person.hidden;
+      return matchName && matchPerson && visible;
     });
   }, [people, searchText, selectedPerson]);
+
+  const hiddenPeople = useMemo(() => {
+    return people.filter((person) => person.hidden);
+  }, [people]);
 
   const todayAssignments = useMemo(() => {
     return filteredPeople.filter((person) => getDayStatus(person, currentDate) === "work");
@@ -432,6 +544,18 @@ export default function App() {
     }
   };
 
+  const toggleHiddenPerson = (id) => {
+    setPeople((prev) =>
+      prev.map((person) =>
+        person.id === id ? { ...person, hidden: !person.hidden } : person
+      )
+    );
+  };
+
+  const showAllPeople = () => {
+    setPeople((prev) => prev.map((person) => ({ ...person, hidden: false })));
+  };
+
   const moveRange = (direction) => {
     if (viewMode === "day") {
       setCurrentDate((prev) => addDays(prev, direction));
@@ -464,6 +588,37 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const importData = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+
+        if (!parsed || !Array.isArray(parsed.people)) {
+          alert("El archivo no tiene un formato válido.");
+          return;
+        }
+
+        setPeople(parsed.people.map((p) => ({ hidden: false, notes: "", ...p })));
+        setHolidays(Array.isArray(parsed.holidays) ? parsed.holidays : []);
+        setBlockedDays(Array.isArray(parsed.blockedDays) ? parsed.blockedDays : []);
+        setSelectedPerson("all");
+
+        alert("Datos importados correctamente.");
+      } catch {
+        alert("No se pudo importar el archivo. Verifica que sea un JSON válido.");
+      } finally {
+        event.target.value = "";
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <PersonModal
@@ -483,7 +638,7 @@ export default function App() {
                 Calendario de Personal
               </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Búsqueda, filtros, notas, exportación y vistas por periodo.
+                Búsqueda, filtros, notas, exportar/importar y vistas por periodo.
               </p>
             </div>
 
@@ -516,6 +671,21 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700"
+              >
+                Importar
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={importData}
+                className="hidden"
+              />
+
+              <button
                 onClick={openCreateModal}
                 className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
               >
@@ -545,26 +715,35 @@ export default function App() {
                   onChange={(e) => setSelectedPerson(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none"
                 >
-                  <option value="all">Todo el personal</option>
-                  {people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                    </option>
-                  ))}
+                  <option value="all">Todo el personal visible</option>
+                  {people
+                    .filter((person) => !person.hidden)
+                    .map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                      </option>
+                    ))}
                 </select>
+
+                <button
+                  onClick={showAllPeople}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700"
+                >
+                  Mostrar todo el personal
+                </button>
               </div>
             </div>
 
             <div className="rounded-3xl bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-900">Personal</h2>
+                <h2 className="text-lg font-semibold text-slate-900">Personal visible</h2>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                   {filteredPeople.length}
                 </span>
               </div>
 
               <div className="space-y-3">
-                {filteredPeople.map((person) => (
+                {people.filter((person) => !person.hidden).map((person) => (
                   <div key={person.id} className="rounded-2xl border border-slate-100 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
@@ -583,12 +762,18 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2">
                         <button
                           onClick={() => openEditModal(person)}
                           className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600"
                         >
                           Editar
+                        </button>
+                        <button
+                          onClick={() => toggleHiddenPerson(person.id)}
+                          className="rounded-xl border border-amber-200 px-3 py-1.5 text-xs text-amber-700"
+                        >
+                          Ocultar
                         </button>
                         <button
                           onClick={() => deletePerson(person.id)}
@@ -602,6 +787,43 @@ export default function App() {
                 ))}
               </div>
             </div>
+
+            {hiddenPeople.length > 0 && (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-slate-900">Personal oculto</h2>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    {hiddenPeople.length}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {hiddenPeople.map((person) => (
+                    <div key={person.id} className="rounded-2xl border border-slate-100 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="h-4 w-4 rounded-full"
+                            style={{ backgroundColor: person.color }}
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{person.name}</p>
+                            <p className="text-xs text-slate-500">{person.regimenType}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => toggleHiddenPerson(person.id)}
+                          className="rounded-xl border border-emerald-200 px-3 py-1.5 text-xs text-emerald-700"
+                        >
+                          Mostrar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="rounded-3xl bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">Leyenda</h2>
@@ -672,323 +894,103 @@ export default function App() {
           </aside>
 
           <section className="rounded-3xl bg-white shadow-sm">
-  <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 md:flex-row md:items-center md:justify-between">
-    <div>
-      <h2 className="text-lg font-semibold capitalize text-slate-900">
-        {formatMonthTitle(currentDate)}
-      </h2>
-      <p className="text-sm text-slate-500">
-        Vista {viewMode === "month" ? "mensual" : viewMode === "week" ? "semanal" : "diaria"}
-      </p>
-    </div>
+            <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold capitalize text-slate-900">
+                  {formatMonthTitle(currentDate)}
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Vista {viewMode === "month" ? "mensual" : viewMode === "week" ? "semanal" : "diaria"}
+                </p>
+              </div>
 
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => moveRange(-1)}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
-      >
-        {"<"}
-      </button>
-      <button
-        onClick={() => setCurrentDate(new Date())}
-        className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600"
-      >
-        Hoy
-      </button>
-      <button
-        onClick={() => moveRange(1)}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
-      >
-        {">"}
-      </button>
-    </div>
-  </div>
-
-  {viewMode === "week" && (
-    <>
-      <div className="hidden md:block">
-        <div className="overflow-x-auto">
-          <div
-            className="grid min-w-[1100px]"
-            style={{ gridTemplateColumns: `240px repeat(${days.length}, minmax(70px, 1fr))` }}
-          >
-            <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Personal
-            </div>
-
-            {days.map((day) => {
-              const iso = toISO(day);
-              return (
-                <div
-                  key={iso}
-                  className="border-b border-l border-slate-100 bg-slate-50 px-2 py-3 text-center text-xs font-semibold text-slate-500"
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => moveRange(-1)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
                 >
-                  <div>{formatDateLabel(day)}</div>
-                  <div className="mt-1 flex items-center justify-center gap-1">
-                    {holidaySet.has(iso) && (
-                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">
-                        F
-                      </span>
-                    )}
-                    {blockedSet.has(iso) && (
-                      <span className="rounded bg-rose-100 px-1 text-[10px] text-rose-700">
-                        B
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {filteredPeople.map((person) => (
-              <React.Fragment key={person.id}>
-                <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
-                  <div
-                    className="h-4 w-4 rounded-full"
-                    style={{ backgroundColor: person.color }}
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">{person.name}</p>
-                    <p className="text-xs text-slate-500">{person.regimenType}</p>
-                  </div>
-                </div>
-
-                {days.map((day) => {
-                  const iso = toISO(day);
-                  const status = getDayStatus(person, day);
-
-                  return (
-                    <div
-                      key={`${person.id}-${iso}`}
-                      className="border-b border-l border-slate-100 p-2"
-                    >
-                      <div
-                        className={`relative h-11 rounded-xl ${
-                          status === "rest"
-                            ? "border border-dashed border-slate-300 bg-slate-100"
-                            : ""
-                        }`}
-                        style={{
-                          backgroundColor:
-                            status === "work"
-                              ? person.color
-                              : status === "none"
-                              ? "#f8fafc"
-                              : undefined,
-                          opacity: status === "work" ? 0.9 : 1,
-                        }}
-                      >
-                        {holidaySet.has(iso) && (
-                          <div className="absolute left-1 top-1 rounded bg-amber-100 px-1 text-[10px] text-amber-700">
-                            F
-                          </div>
-                        )}
-                        {blockedSet.has(iso) && (
-                          <div className="absolute right-1 top-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700">
-                            B
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3 p-4 md:hidden">
-        {days.map((day) => {
-          const iso = toISO(day);
-          const working = filteredPeople.filter((person) => getDayStatus(person, day) === "work");
-          const resting = filteredPeople.filter((person) => getDayStatus(person, day) === "rest");
-
-          return (
-            <div key={iso} className="rounded-2xl border border-slate-200 p-3">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{formatDateLabel(day)}</p>
-                  <p className="text-xs text-slate-500">
-                    {working.length} trabajando · {resting.length} descansando
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {working.map((person) => (
-                  <div
-                    key={`${person.id}-${iso}-work`}
-                    className="flex items-center justify-between rounded-xl px-3 py-2"
-                    style={{ backgroundColor: `${person.color}22` }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3.5 w-3.5 rounded-full"
-                        style={{ backgroundColor: person.color }}
-                      />
-                      <span className="text-sm font-medium text-slate-700">{person.name}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">Trabajo</span>
-                  </div>
-                ))}
-
-                {resting.map((person) => (
-                  <div
-                    key={`${person.id}-${iso}-rest`}
-                    className="flex items-center justify-between rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3.5 w-3.5 rounded-full"
-                        style={{ backgroundColor: person.color }}
-                      />
-                      <span className="text-sm font-medium text-slate-700">{person.name}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">Descanso</span>
-                  </div>
-                ))}
+                  {"<"}
+                </button>
+                <button
+                  onClick={() => setCurrentDate(new Date())}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600"
+                >
+                  Hoy
+                </button>
+                <button
+                  onClick={() => moveRange(1)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+                >
+                  {">"}
+                </button>
               </div>
             </div>
-          );
-        })}
-      </div>
-    </>
-  )}
 
-  {viewMode === "day" && (
-    <div className="p-4 md:p-5">
-      <div className="mb-4 rounded-2xl bg-slate-50 p-4">
-        <p className="text-base font-semibold text-slate-900">
-          {new Intl.DateTimeFormat("es-PE", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-          }).format(currentDate)}
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {filteredPeople.map((person) => {
-          const status = getDayStatus(person, currentDate);
-          return (
-            <div
-              key={person.id}
-              className="flex items-center justify-between rounded-2xl border border-slate-200 p-4"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="h-4 w-4 rounded-full"
-                  style={{ backgroundColor: person.color }}
+            {(viewMode === "week" || viewMode === "month") && (
+              <div className="p-0">
+                <ScheduleGrid
+                  days={days}
+                  people={filteredPeople}
+                  holidaySet={holidaySet}
+                  blockedSet={blockedSet}
                 />
-                <div>
-                  <p className="text-sm font-medium text-slate-800">{person.name}</p>
-                  <p className="text-xs text-slate-500">{person.regimenType}</p>
-                </div>
               </div>
+            )}
 
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  status === "work"
-                    ? "bg-slate-800 text-white"
-                    : status === "rest"
-                    ? "bg-slate-100 text-slate-600"
-                    : "bg-slate-50 text-slate-400"
-                }`}
-              >
-                {status === "work"
-                  ? "Trabajo"
-                  : status === "rest"
-                  ? "Descanso"
-                  : "Sin programación"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  )}
-
-  {viewMode === "month" && (
-    <div className="p-4 md:p-5">
-      <div className="space-y-3">
-        {days.map((day) => {
-          const iso = toISO(day);
-          const working = filteredPeople.filter((person) => getDayStatus(person, day) === "work");
-          const resting = filteredPeople.filter((person) => getDayStatus(person, day) === "rest");
-
-          return (
-            <div key={iso} className="rounded-2xl border border-slate-200 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{formatDateLabel(day)}</p>
-                  <p className="text-xs text-slate-500">
-                    {working.length} trabajando · {resting.length} descansando
+            {viewMode === "day" && (
+              <div className="p-4 md:p-5">
+                <div className="mb-4 rounded-2xl bg-slate-50 p-4">
+                  <p className="text-base font-semibold text-slate-900">
+                    {new Intl.DateTimeFormat("es-PE", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    }).format(currentDate)}
                   </p>
                 </div>
 
-                <div className="flex gap-1">
-                  {holidaySet.has(iso) && (
-                    <span className="rounded bg-amber-100 px-2 py-1 text-[10px] text-amber-700">
-                      Feriado
-                    </span>
-                  )}
-                  {blockedSet.has(iso) && (
-                    <span className="rounded bg-rose-100 px-2 py-1 text-[10px] text-rose-700">
-                      Bloqueo
-                    </span>
-                  )}
+                <div className="space-y-3">
+                  {filteredPeople.map((person) => {
+                    const status = getDayStatus(person, currentDate);
+                    return (
+                      <div
+                        key={person.id}
+                        className="flex items-center justify-between rounded-2xl border border-slate-200 p-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="h-4 w-4 rounded-full"
+                            style={{ backgroundColor: person.color }}
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{person.name}</p>
+                            <p className="text-xs text-slate-500">{person.regimenType}</p>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                            status === "work"
+                              ? "bg-slate-800 text-white"
+                              : status === "rest"
+                              ? "bg-slate-100 text-slate-600"
+                              : "bg-slate-50 text-slate-400"
+                          }`}
+                        >
+                          {status === "work"
+                            ? "Trabajo"
+                            : status === "rest"
+                            ? "Descanso"
+                            : "Sin programación"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-
-              <div className="space-y-2">
-                {working.map((person) => (
-                  <div
-                    key={`${person.id}-${iso}-work`}
-                    className="flex items-center justify-between rounded-xl px-3 py-2"
-                    style={{ backgroundColor: `${person.color}22` }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3.5 w-3.5 rounded-full"
-                        style={{ backgroundColor: person.color }}
-                      />
-                      <span className="text-sm font-medium text-slate-700">{person.name}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">Trabajo</span>
-                  </div>
-                ))}
-
-                {resting.map((person) => (
-                  <div
-                    key={`${person.id}-${iso}-rest`}
-                    className="flex items-center justify-between rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3.5 w-3.5 rounded-full"
-                        style={{ backgroundColor: person.color }}
-                      />
-                      <span className="text-sm font-medium text-slate-700">{person.name}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">Descanso</span>
-                  </div>
-                ))}
-
-                {working.length === 0 && resting.length === 0 && (
-                  <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                    Sin programación.
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  )}
-</section>
+            )}
+          </section>
         </div>
       </div>
     </div>
